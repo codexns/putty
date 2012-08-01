@@ -2816,6 +2816,8 @@ static int psftp_connect(char *userhost, char *user, int portnumber, char *subsy
     cfg.remote_cmd_ptr2 =
 	"test -x /usr/lib/sftp-server && exec /usr/lib/sftp-server\n"
 	"test -x /usr/local/lib/sftp-server && exec /usr/local/lib/sftp-server\n"
+	"test -x /usr/lib/openssh/sftp-server && exec /usr/lib/openssh/sftp-server\n"
+	"test -x /usr/libexec/openssh/sftp-server && exec /usr/libexec/openssh/sftp-server\n"
 	"exec sftp-server";
     cfg.ssh_subsys2 = FALSE;
 
