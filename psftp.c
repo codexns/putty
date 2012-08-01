@@ -25,7 +25,7 @@ const char *const appname = "PSFTP";
  * send buffer.
  */
 
-static int psftp_connect(char *userhost, char *user, int portnumber);
+static int psftp_connect(char *userhost, char *user, int portnumber, char *subsystem);
 static int do_sftp_init(void);
 void do_sftp_cleanup();
 
@@ -1830,6 +1830,7 @@ int sftp_cmd_chmod(struct sftp_command *cmd)
 static int sftp_cmd_open(struct sftp_command *cmd)
 {
     int portnumber;
+    char *subsystem;
 
     if (back != NULL) {
 	printf("psftp: already connected\n");
@@ -1850,7 +1851,8 @@ static int sftp_cmd_open(struct sftp_command *cmd)
     } else
 	portnumber = 0;
 
-    if (psftp_connect(cmd->words[1], NULL, portnumber)) {
+    subsystem = "sftp";
+    if (psftp_connect(cmd->words[1], NULL, portnumber, subsystem)) {
 	back = NULL;		       /* connection is already closed */
 	return -1;		       /* this is fatal */
     }
@@ -2088,7 +2090,7 @@ static struct sftp_cmd_lookup {
 	    "  Uploads a file to the server and stores it there under\n"
 	    "  the same name, or under a different one if you supply the\n"
 	    "  argument <remote-filename>.\n"
-	    "  If -P specified, preserve permission.\n"
+	    "  If -P specified, preserve file modification date.\n"
 	    "  If -r specified, recursively store a directory.\n",
 	    sftp_cmd_put
     },
@@ -2638,6 +2640,7 @@ static void usage(void)
     printf("  -l user   connect with specified username\n");
     printf("  -P port   connect to specified port\n");
     printf("  -pw passw login with specified password\n");
+    printf("  -s subsystem    Run the specified subsystem when connecting\n");
     printf("  -1 -2     force use of particular SSH protocol version\n");
     printf("  -4 -6     force use of IPv4 or IPv6\n");
     printf("  -C        enable compression\n");
@@ -2657,7 +2660,7 @@ static void version(void)
 /*
  * Connect to a host.
  */
-static int psftp_connect(char *userhost, char *user, int portnumber)
+static int psftp_connect(char *userhost, char *user, int portnumber, char *subsystem)
 {
     char *host, *realhost;
     const char *err;
@@ -2786,8 +2789,11 @@ static int psftp_connect(char *userhost, char *user, int portnumber)
     cfg.ssh_simple = TRUE;
 
     /* Set up subsystem name. */
-    strcpy(cfg.remote_cmd, "sftp");
-    cfg.ssh_subsys = TRUE;
+    strcpy(cfg.remote_cmd, subsystem);
+    if (strchr(cfg.remote_cmd, '/')) 
+        cfg.ssh_subsys = FALSE;
+    else
+        cfg.ssh_subsys = TRUE;
     cfg.nopty = TRUE;
 
     /*
@@ -2857,7 +2863,7 @@ int psftp_main(int argc, char *argv[])
 {
     int i;
     int portnumber = 0;
-    char *userhost, *user;
+    char *userhost, *user, *subsystem;
     int mode = 0;
     int modeflags = 0;
     char *batchfile = NULL;
@@ -2871,6 +2877,7 @@ int psftp_main(int argc, char *argv[])
     sk_init();
 
     userhost = user = NULL;
+    subsystem = "sftp";
 
     /* Load Default Settings before doing anything else. */
     do_defaults(NULL, &cfg);
@@ -2900,6 +2907,8 @@ int psftp_main(int argc, char *argv[])
         } else if (strcmp(argv[i], "-pgpfp") == 0) {
             pgp_fingerprints();
             return 1;
+	} else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
+	    subsystem = argv[++i];
 	} else if (strcmp(argv[i], "-V") == 0) {
 	    version();
 	} else if (strcmp(argv[i], "-batch") == 0) {
@@ -2937,7 +2946,7 @@ int psftp_main(int argc, char *argv[])
      */
     if (userhost) {
 	int ret;
-	ret = psftp_connect(userhost, user, portnumber);
+	ret = psftp_connect(userhost, user, portnumber, subsystem);
 	sfree(userhost);
 	if (ret)
 	    return 1;
