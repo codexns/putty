@@ -2873,6 +2873,10 @@ static int psftp_connect(char *userhost, char *user, int portnumber, char *subsy
 		 " exec /usr/lib/sftp-server\n"
 		 "test -x /usr/local/lib/sftp-server &&"
 		 " exec /usr/local/lib/sftp-server\n"
+		 "test -x /usr/lib/openssh/sftp-server &&"
+		 " exec /usr/lib/openssh/sftp-server\n"
+		 "test -x /usr/libexec/openssh/sftp-server &&"
+		 " exec /usr/libexec/openssh/sftp-server\n"
 		 "exec sftp-server");
     conf_set_int(conf, CONF_ssh_subsys2, FALSE);
 
