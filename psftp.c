@@ -507,7 +507,7 @@ int sftp_get_file(char *fname, char *outfname, int recurse, int restart)
     return ret;
 }
 
-int sftp_put_file(char *fname, char *outfname, int recurse, int restart)
+int sftp_put_file(char *fname, char *outfname, int recurse, int restart, int preserve)
 {
     struct fxp_handle *fh;
     struct fxp_xfer *xfer;
@@ -518,6 +518,7 @@ int sftp_put_file(char *fname, char *outfname, int recurse, int restart)
     int ret, err, eof;
     struct fxp_attrs attrs;
     long permissions;
+    unsigned long mtime, atime;
 
     /*
      * In recursive mode, see if we're dealing with a directory.
@@ -618,7 +619,7 @@ int sftp_put_file(char *fname, char *outfname, int recurse, int restart)
 
             nextfname = dir_file_cat(fname, ournames[i]);
 	    nextoutfname = dupcat(outfname, "/", ournames[i], NULL);
-	    ret = sftp_put_file(nextfname, nextoutfname, recurse, restart);
+	    ret = sftp_put_file(nextfname, nextoutfname, recurse, restart, preserve);
 	    restart = FALSE;	       /* after first partial file, do full */
 	    sfree(nextoutfname);
 	    sfree(nextfname);
@@ -642,7 +643,7 @@ int sftp_put_file(char *fname, char *outfname, int recurse, int restart)
 	return 1;
     }
 
-    file = open_existing_file(fname, NULL, NULL, NULL, &permissions);
+    file = open_existing_file(fname, NULL, &mtime, &atime, &permissions);
     if (!file) {
 	printf("local: unable to open %s\n", fname);
 	return 0;
@@ -732,6 +733,19 @@ int sftp_put_file(char *fname, char *outfname, int recurse, int restart)
     }
 
     xfer_cleanup(xfer);
+
+    if (preserve) {
+        struct fxp_attrs attrs;
+        attrs.flags = SSH_FILEXFER_ATTR_ACMODTIME;
+        attrs.atime = atime;
+        attrs.mtime = mtime;
+        req = fxp_fsetstat_send(fh, attrs);
+        pktin = sftp_wait_for_reply(req);
+        ret = fxp_fsetstat_recv(pktin, req);
+        if (!ret) {
+            printf("unable to set file times: %s\n", fxp_error());
+        }
+    }
 
   cleanup:
     req = fxp_close_send(fh);
@@ -1317,6 +1331,7 @@ int sftp_general_put(struct sftp_command *cmd, int restart, int multiple)
     char *fname, *wfname, *origoutfname, *outfname;
     int i, ret;
     int recurse = FALSE;
+    int preserve = FALSE;
 
     if (back == NULL) {
 	not_connected();
@@ -1331,6 +1346,8 @@ int sftp_general_put(struct sftp_command *cmd, int restart, int multiple)
 	    break;
 	} else if (!strcmp(cmd->words[i], "-r")) {
 	    recurse = TRUE;
+	} else if (!strcmp(cmd->words[i], "-P")) {
+	    preserve = TRUE;
 	} else {
 	    printf("%s: unrecognised option '%s'\n", cmd->words[0], cmd->words[i]);
 	    return 0;
@@ -1377,7 +1394,7 @@ int sftp_general_put(struct sftp_command *cmd, int restart, int multiple)
 		}
 		return 0;
 	    }
-	    ret = sftp_put_file(wfname, outfname, recurse, restart);
+	    ret = sftp_put_file(wfname, outfname, recurse, restart, preserve);
 	    sfree(outfname);
 
 	    if (wcm) {
@@ -2082,10 +2099,11 @@ static struct sftp_cmd_lookup {
     },
     {
 	"put", TRUE, "upload a file from your local machine to the server",
-	    " [ -r ] [ -- ] <filename> [ <remote-filename> ]\n"
+	    " [ -r ] [ -P ] [ -- ] <filename> [ <remote-filename> ]\n"
 	    "  Uploads a file to the server and stores it there under\n"
 	    "  the same name, or under a different one if you supply the\n"
 	    "  argument <remote-filename>.\n"
+	    "  If -P specified, preserve permission.\n"
 	    "  If -r specified, recursively store a directory.\n",
 	    sftp_cmd_put
     },
