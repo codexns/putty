@@ -10,6 +10,8 @@
 #include "putty.h"
 #include "storage.h"
 #include "ssh.h"
+#include "conio.h"
+#include "ctype.h"
 
 int console_batch_mode = FALSE;
 
@@ -247,7 +249,7 @@ int askappend(void *frontend, Filename *filename,
 
 /*
  * Warn about the obsolescent key file format.
- * 
+ *
  * Uniquely among these functions, this one does _not_ expect a
  * frontend handle. This means that if PuTTY is ported to a
  * platform which requires frontend handles, this function will be
@@ -297,17 +299,11 @@ void logevent(void *frontend, const char *string)
     log_eventlog(console_logctx, string);
 }
 
-static void console_data_untrusted(HANDLE hout, const char *data, int len)
-{
-    DWORD dummy;
-    /* FIXME: control-character filtering */
-    WriteFile(hout, data, len, &dummy, NULL);
-}
-
 int console_get_userpass_input(prompts_t *p, unsigned char *in, int inlen)
 {
-    HANDLE hin, hout;
     size_t curr_prompt;
+    size_t n = 0;
+    int ch;
 
     /*
      * Zero all the results, in case we abort half-way through.
@@ -327,22 +323,6 @@ int console_get_userpass_input(prompts_t *p, unsigned char *in, int inlen)
     if (p->n_prompts) {
 	if (console_batch_mode)
 	    return 0;
-	hin = GetStdHandle(STD_INPUT_HANDLE);
-	if (hin == INVALID_HANDLE_VALUE) {
-	    fprintf(stderr, "Cannot get standard input handle\n");
-	    cleanup_exit(1);
-	}
-    }
-
-    /*
-     * And if we have anything to print, we need standard output.
-     */
-    if ((p->name_reqd && p->name) || p->instruction || p->n_prompts) {
-	hout = GetStdHandle(STD_OUTPUT_HANDLE);
-	if (hout == INVALID_HANDLE_VALUE) {
-	    fprintf(stderr, "Cannot get standard output handle\n");
-	    cleanup_exit(1);
-	}
     }
 
     /*
@@ -351,69 +331,66 @@ int console_get_userpass_input(prompts_t *p, unsigned char *in, int inlen)
     /* We only print the `name' caption if we have to... */
     if (p->name_reqd && p->name) {
 	size_t l = strlen(p->name);
-	console_data_untrusted(hout, p->name, l);
+	fprintf(stderr, p->name);
 	if (p->name[l-1] != '\n')
-	    console_data_untrusted(hout, "\n", 1);
+	    fprintf(stderr, "\n");
     }
     /* ...but we always print any `instruction'. */
     if (p->instruction) {
 	size_t l = strlen(p->instruction);
-	console_data_untrusted(hout, p->instruction, l);
+	fprintf(stderr, p->instruction);
 	if (p->instruction[l-1] != '\n')
-	    console_data_untrusted(hout, "\n", 1);
+	    fprintf(stderr, "\n");
     }
 
     for (curr_prompt = 0; curr_prompt < p->n_prompts; curr_prompt++) {
 
-	DWORD savemode, newmode;
-        int len;
-	prompt_t *pr = p->prompts[curr_prompt];
+        prompt_t *pr = p->prompts[curr_prompt];
 
-	GetConsoleMode(hin, &savemode);
-	newmode = savemode | ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT;
-	if (!pr->echo)
-	    newmode &= ~ENABLE_ECHO_INPUT;
-	else
-	    newmode |= ENABLE_ECHO_INPUT;
-	SetConsoleMode(hin, newmode);
+        fprintf(stderr, pr->prompt);
 
-	console_data_untrusted(hout, pr->prompt, strlen(pr->prompt));
-
-        len = 0;
-        while (1) {
-            DWORD ret = 0;
-            BOOL r;
-
-            prompt_ensure_result_size(pr, len * 5 / 4 + 512);
-
-            r = ReadFile(hin, pr->result + len, pr->resultsize - len - 1,
-                         &ret, NULL);
-
-            if (!r || ret == 0) {
-                len = -1;
-                break;
-            }
-            len += ret;
-            if (pr->result[len - 1] == '\n') {
-                len--;
-                if (pr->result[len - 1] == '\r')
-                    len--;
-                break;
+        while ((ch = _getch()) != '\r') {
+            if (ch == EOF) {
+                fprintf(stderr, "[EOF]\n");
+                return 0;
+            } else if (ch == 0 || ch == 0xE0) {
+                ch = (ch << 4) | _getch();
+                if ((ch == 0xE53 || ch == 0xE4B || ch == 0x053 || ch == 0x04b) && n) {
+                    pr->result[--n] = '\0';
+                    fprintf(stderr, "\b \b");
+                } else {
+                    fputc('\a', stderr);
+                }
+            } else if ((ch == '\b' || ch == 127) && n) {
+                pr->result[--n] = '\0';
+                fprintf(stderr, "\b \b");
+            } else if (ch == 3) {
+                fprintf(stderr, "^C\n");
+                exit(-1);
+            } else if (ch == 26) {
+                fprintf(stderr, "^Z\n");
+                return 0;
+            } else if (ch == 27) {
+                fprintf(stderr, "\n");
+                fprintf(stderr, pr->prompt);
+                n = 0;
+            } else if ((n < pr->resultsize - 1) && !iscntrl(ch)) {
+                pr->result[n++] = ch;
+                if (!pr->echo) {
+                    fprintf(stderr, "*");
+                } else {
+                    fputc(ch, stderr);
+                }
+            } else {
+                fprintf(stderr, "\a");
             }
         }
 
-	SetConsoleMode(hin, savemode);
+        fprintf(stderr, "\n");
 
-	if (!pr->echo) {
-	    DWORD dummy;
-	    WriteFile(hout, "\r\n", 2, &dummy, NULL);
-	}
-
-        if (len < 0) {
-            return 0;                  /* failure due to read error */
-        }
-
-	pr->result[len] = '\0';
+        if (n > pr->resultsize)
+            n = pr->resultsize - 1;
+        pr->result[n] = '\0';
     }
 
     return 1; /* success */
