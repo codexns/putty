@@ -6,12 +6,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <conio.h>
+#include <ctype.h>
 
 #include "putty.h"
 #include "storage.h"
 #include "ssh.h"
-#include "conio.h"
-#include "ctype.h"
 
 int console_batch_mode = FALSE;
 
