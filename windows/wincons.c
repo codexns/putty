@@ -348,10 +348,12 @@ int console_get_userpass_input(prompts_t *p, unsigned char *in, int inlen)
         prompt_t *pr = p->prompts[curr_prompt];
 
         fprintf(stderr, pr->prompt);
+        fflush(stderr);
 
         while ((ch = _getch()) != '\r') {
             if (ch == EOF) {
                 fprintf(stderr, "[EOF]\n");
+                fflush(stderr);
                 return 0;
             } else if (ch == 0 || ch == 0xE0) {
                 ch = (ch << 4) | _getch();
@@ -366,13 +368,16 @@ int console_get_userpass_input(prompts_t *p, unsigned char *in, int inlen)
                 fprintf(stderr, "\b \b");
             } else if (ch == 3) {
                 fprintf(stderr, "^C\n");
+                fflush(stderr);
                 exit(-1);
             } else if (ch == 26) {
                 fprintf(stderr, "^Z\n");
+                fflush(stderr);
                 return 0;
             } else if (ch == 27) {
                 fprintf(stderr, "\n");
                 fprintf(stderr, pr->prompt);
+                fflush(stderr);
                 n = 0;
             } else if ((n < pr->result_len - 1) && !iscntrl(ch)) {
                 pr->result[n++] = ch;
@@ -387,6 +392,7 @@ int console_get_userpass_input(prompts_t *p, unsigned char *in, int inlen)
         }
 
         fprintf(stderr, "\n");
+        fflush(stderr);
 
         if (n > pr->result_len)
             n = pr->result_len - 1;
