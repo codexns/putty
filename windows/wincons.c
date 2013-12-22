@@ -13,6 +13,8 @@
 #include "storage.h"
 #include "ssh.h"
 
+int accept_input(char *prompt, int echo, char *input, int inlen);
+
 int console_batch_mode = FALSE;
 
 static void *console_logctx = NULL;
@@ -52,100 +54,101 @@ int verify_ssh_host_key(void *frontend, char *host, int port, char *keytype,
                         void (*callback)(void *ctx, int result), void *ctx)
 {
     int ret;
-    HANDLE hin;
-    DWORD savemode, i;
+    int ch;
+    char input[100];
+    int inlen = 100;
 
     static const char absentmsg_batch[] =
-	"The server's host key is not cached in the registry. You\n"
-	"have no guarantee that the server is the computer you\n"
-	"think it is.\n"
-	"The server's %s key fingerprint is:\n"
-	"%s\n"
-	"Connection abandoned.\n";
+        "The server's host key is not cached in the registry. You\n"
+        "have no guarantee that the server is the computer you\n"
+        "think it is.\n"
+        "The server's %s key fingerprint is:\n"
+        "%s\n"
+        "Connection abandoned.\n";
     static const char absentmsg[] =
-	"The server's host key is not cached in the registry. You\n"
-	"have no guarantee that the server is the computer you\n"
-	"think it is.\n"
-	"The server's %s key fingerprint is:\n"
-	"%s\n"
-	"If you trust this host, enter \"y\" to add the key to\n"
-	"PuTTY's cache and carry on connecting.\n"
-	"If you want to carry on connecting just once, without\n"
-	"adding the key to the cache, enter \"n\".\n"
-	"If you do not trust this host, press Return to abandon the\n"
-	"connection.\n"
-	"Store key in cache? (y/n) ";
+        "The server's host key is not cached in the registry. You\n"
+        "have no guarantee that the server is the computer you\n"
+        "think it is.\n"
+        "The server's %s key fingerprint is:\n"
+        "%s\n"
+        "If you trust this host, enter \"y\" to add the key to\n"
+        "PuTTY's cache and carry on connecting.\n"
+        "If you want to carry on connecting just once, without\n"
+        "adding the key to the cache, enter \"n\".\n"
+        "If you do not trust this host, press Return to abandon the\n"
+        "connection.\n";
+    static char absentmsg_prompt[] = "Store key in cache? (y/n) ";
 
     static const char wrongmsg_batch[] =
-	"WARNING - POTENTIAL SECURITY BREACH!\n"
-	"The server's host key does not match the one PuTTY has\n"
-	"cached in the registry. This means that either the\n"
-	"server administrator has changed the host key, or you\n"
-	"have actually connected to another computer pretending\n"
-	"to be the server.\n"
-	"The new %s key fingerprint is:\n"
-	"%s\n"
-	"Connection abandoned.\n";
+        "WARNING - POTENTIAL SECURITY BREACH!\n"
+        "The server's host key does not match the one PuTTY has\n"
+        "cached in the registry. This means that either the\n"
+        "server administrator has changed the host key, or you\n"
+        "have actually connected to another computer pretending\n"
+        "to be the server.\n"
+        "The new %s key fingerprint is:\n"
+        "%s\n"
+        "Connection abandoned.\n";
     static const char wrongmsg[] =
-	"WARNING - POTENTIAL SECURITY BREACH!\n"
-	"The server's host key does not match the one PuTTY has\n"
-	"cached in the registry. This means that either the\n"
-	"server administrator has changed the host key, or you\n"
-	"have actually connected to another computer pretending\n"
-	"to be the server.\n"
-	"The new %s key fingerprint is:\n"
-	"%s\n"
-	"If you were expecting this change and trust the new key,\n"
-	"enter \"y\" to update PuTTY's cache and continue connecting.\n"
-	"If you want to carry on connecting but without updating\n"
-	"the cache, enter \"n\".\n"
-	"If you want to abandon the connection completely, press\n"
-	"Return to cancel. Pressing Return is the ONLY guaranteed\n"
-	"safe choice.\n"
-	"Update cached key? (y/n, Return cancels connection) ";
+        "WARNING - POTENTIAL SECURITY BREACH!\n"
+        "The server's host key does not match the one PuTTY has\n"
+        "cached in the registry. This means that either the\n"
+        "server administrator has changed the host key, or you\n"
+        "have actually connected to another computer pretending\n"
+        "to be the server.\n"
+        "The new %s key fingerprint is:\n"
+        "%s\n"
+        "If you were expecting this change and trust the new key,\n"
+        "enter \"y\" to update PuTTY's cache and continue connecting.\n"
+        "If you want to carry on connecting but without updating\n"
+        "the cache, enter \"n\".\n"
+        "If you want to abandon the connection completely, press\n"
+        "Return to cancel. Pressing Return is the ONLY guaranteed\n"
+        "safe choice.\n";
+    static char wrongmsg_prompt[] =
+        "Update cached key? (y/n, Return cancels connection) ";
 
     static const char abandoned[] = "Connection abandoned.\n";
-
-    char line[32];
 
     /*
      * Verify the key against the registry.
      */
     ret = verify_host_key(host, port, keytype, keystr);
 
-    if (ret == 0)		       /* success - key matched OK */
-	return 1;
+    if (ret == 0)                       /* success - key matched OK */
+        return 1;
 
-    if (ret == 2) {		       /* key was different */
-	if (console_batch_mode) {
-	    fprintf(stderr, wrongmsg_batch, keytype, fingerprint);
+    if (ret == 2) {                       /* key was different */
+        if (console_batch_mode) {
+            fprintf(stderr, wrongmsg_batch, keytype, fingerprint);
             return 0;
-	}
-	fprintf(stderr, wrongmsg, keytype, fingerprint);
-	fflush(stderr);
+        }
+        fprintf(stderr, wrongmsg, keytype, fingerprint);
+        fflush(stderr);
+        ret = accept_input(wrongmsg_prompt, 1, input, inlen);
     }
-    if (ret == 1) {		       /* key was absent */
-	if (console_batch_mode) {
-	    fprintf(stderr, absentmsg_batch, keytype, fingerprint);
+    if (ret == 1) {                       /* key was absent */
+        if (console_batch_mode) {
+            fprintf(stderr, absentmsg_batch, keytype, fingerprint);
             return 0;
-	}
-	fprintf(stderr, absentmsg, keytype, fingerprint);
-	fflush(stderr);
+        }
+        fprintf(stderr, absentmsg, keytype, fingerprint);
+        fflush(stderr);
+        ret = accept_input(absentmsg_prompt, 1, input, inlen);
     }
 
-    hin = GetStdHandle(STD_INPUT_HANDLE);
-    GetConsoleMode(hin, &savemode);
-    SetConsoleMode(hin, (savemode | ENABLE_ECHO_INPUT |
-			 ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT));
-    ReadFile(hin, line, sizeof(line) - 1, &i, NULL);
-    SetConsoleMode(hin, savemode);
+    if (ret == 0) {
+        return 0;
+    }
+    ch = input[0];
 
-    if (line[0] != '\0' && line[0] != '\r' && line[0] != '\n') {
-	if (line[0] == 'y' || line[0] == 'Y')
-	    store_host_key(host, port, keytype, keystr);
+    if (ch != '\0' && ch != '\r' && ch != '\n') {
+        if (ch == 'y' || ch == 'Y') {
+            store_host_key(host, port, keytype, keystr);
+        }
         return 1;
     } else {
-	fprintf(stderr, abandoned);
+        fprintf(stderr, abandoned);
         return 0;
     }
 }
@@ -159,43 +162,42 @@ void update_specials_menu(void *frontend)
  * below the configured 'warn' threshold).
  */
 int askalg(void *frontend, const char *algtype, const char *algname,
-	   void (*callback)(void *ctx, int result), void *ctx)
+           void (*callback)(void *ctx, int result), void *ctx)
 {
-    HANDLE hin;
-    DWORD savemode, i;
+    int ret;
+    int ch;
+    char input[100];
+    int inlen = 100;
 
     static const char msg[] =
-	"The first %s supported by the server is\n"
-	"%s, which is below the configured warning threshold.\n"
-	"Continue with connection? (y/n) ";
+        "The first %s supported by the server is\n"
+        "%s, which is below the configured warning threshold.\n";
+    static char prompt[] = "Continue with connection? (y/n) ";
     static const char msg_batch[] =
-	"The first %s supported by the server is\n"
-	"%s, which is below the configured warning threshold.\n"
-	"Connection abandoned.\n";
+        "The first %s supported by the server is\n"
+        "%s, which is below the configured warning threshold.\n"
+        "Connection abandoned.\n";
     static const char abandoned[] = "Connection abandoned.\n";
 
-    char line[32];
-
     if (console_batch_mode) {
-	fprintf(stderr, msg_batch, algtype, algname);
-	return 0;
+        fprintf(stderr, msg_batch, algtype, algname);
+        return 0;
     }
 
     fprintf(stderr, msg, algtype, algname);
     fflush(stderr);
 
-    hin = GetStdHandle(STD_INPUT_HANDLE);
-    GetConsoleMode(hin, &savemode);
-    SetConsoleMode(hin, (savemode | ENABLE_ECHO_INPUT |
-			 ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT));
-    ReadFile(hin, line, sizeof(line) - 1, &i, NULL);
-    SetConsoleMode(hin, savemode);
+    ret = accept_input(prompt, 1, input, inlen);
+    if (ret == 0) {
+        return 0;
+    }
+    ch = input[0];
 
-    if (line[0] == 'y' || line[0] == 'Y') {
-	return 1;
+    if (ch == 'y' || ch == 'Y') {
+        return 1;
     } else {
-	fprintf(stderr, abandoned);
-	return 0;
+        fprintf(stderr, abandoned);
+        return 0;
     }
 }
 
@@ -204,47 +206,47 @@ int askalg(void *frontend, const char *algtype, const char *algname,
  * Returns 2 for wipe, 1 for append, 0 for cancel (don't log).
  */
 int askappend(void *frontend, Filename filename,
-	      void (*callback)(void *ctx, int result), void *ctx)
+              void (*callback)(void *ctx, int result), void *ctx)
 {
-    HANDLE hin;
-    DWORD savemode, i;
+    int ret;
+    int ch;
+    char input[100];
+    int inlen = 100;
 
     static const char msgtemplate[] =
-	"The session log file \"%.*s\" already exists.\n"
-	"You can overwrite it with a new session log,\n"
-	"append your session log to the end of it,\n"
-	"or disable session logging for this session.\n"
-	"Enter \"y\" to wipe the file, \"n\" to append to it,\n"
-	"or just press Return to disable logging.\n"
-	"Wipe the log file? (y/n, Return cancels logging) ";
+        "The session log file \"%.*s\" already exists.\n"
+        "You can overwrite it with a new session log,\n"
+        "append your session log to the end of it,\n"
+        "or disable session logging for this session.\n"
+        "Enter \"y\" to wipe the file, \"n\" to append to it,\n"
+        "or just press Return to disable logging.\n";
+    static char msgtemplate_prompt[] =
+        "Wipe the log file? (y/n, Return cancels logging) ";
 
     static const char msgtemplate_batch[] =
-	"The session log file \"%.*s\" already exists.\n"
-	"Logging will not be enabled.\n";
-
-    char line[32];
+        "The session log file \"%.*s\" already exists.\n"
+        "Logging will not be enabled.\n";
 
     if (console_batch_mode) {
-	fprintf(stderr, msgtemplate_batch, FILENAME_MAX, filename.path);
-	fflush(stderr);
-	return 0;
+        fprintf(stderr, msgtemplate_batch, FILENAME_MAX, filename.path);
+        fflush(stderr);
+        return 0;
     }
     fprintf(stderr, msgtemplate, FILENAME_MAX, filename.path);
     fflush(stderr);
 
-    hin = GetStdHandle(STD_INPUT_HANDLE);
-    GetConsoleMode(hin, &savemode);
-    SetConsoleMode(hin, (savemode | ENABLE_ECHO_INPUT |
-			 ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT));
-    ReadFile(hin, line, sizeof(line) - 1, &i, NULL);
-    SetConsoleMode(hin, savemode);
+    ret = accept_input(msgtemplate_prompt, 1, input, inlen);
+    if (ret == 0) {
+        return 0;
+    }
+    ch = input[0];
 
-    if (line[0] == 'y' || line[0] == 'Y')
-	return 2;
-    else if (line[0] == 'n' || line[0] == 'N')
-	return 1;
+    if (ch == 'y' || ch == 'Y')
+        return 2;
+    else if (ch == 'n' || ch == 'N')
+        return 1;
     else
-	return 0;
+        return 0;
 }
 
 /*
@@ -260,15 +262,15 @@ int askappend(void *frontend, Filename filename,
 void old_keyfile_warning(void)
 {
     static const char message[] =
-	"You are loading an SSH-2 private key which has an\n"
-	"old version of the file format. This means your key\n"
-	"file is not fully tamperproof. Future versions of\n"
-	"PuTTY may stop supporting this private key format,\n"
-	"so we recommend you convert your key to the new\n"
-	"format.\n"
-	"\n"
-	"Once the key is loaded into PuTTYgen, you can perform\n"
-	"this conversion simply by saving it again.\n";
+        "You are loading an SSH-2 private key which has an\n"
+        "old version of the file format. This means your key\n"
+        "file is not fully tamperproof. Future versions of\n"
+        "PuTTY may stop supporting this private key format,\n"
+        "so we recommend you convert your key to the new\n"
+        "format.\n"
+        "\n"
+        "Once the key is loaded into PuTTYgen, you can perform\n"
+        "this conversion simply by saving it again.\n";
 
     fputs(message, stderr);
 }
@@ -279,14 +281,14 @@ void old_keyfile_warning(void)
 void pgp_fingerprints(void)
 {
     fputs("These are the fingerprints of the PuTTY PGP Master Keys. They can\n"
-	  "be used to establish a trust path from this executable to another\n"
-	  "one. See the manual for more information.\n"
-	  "(Note: these fingerprints have nothing to do with SSH!)\n"
-	  "\n"
-	  "PuTTY Master Key (RSA), 1024-bit:\n"
-	  "  " PGP_RSA_MASTER_KEY_FP "\n"
-	  "PuTTY Master Key (DSA), 1024-bit:\n"
-	  "  " PGP_DSA_MASTER_KEY_FP "\n", stdout);
+          "be used to establish a trust path from this executable to another\n"
+          "one. See the manual for more information.\n"
+          "(Note: these fingerprints have nothing to do with SSH!)\n"
+          "\n"
+          "PuTTY Master Key (RSA), 1024-bit:\n"
+          "  " PGP_RSA_MASTER_KEY_FP "\n"
+          "PuTTY Master Key (DSA), 1024-bit:\n"
+          "  " PGP_DSA_MASTER_KEY_FP "\n", stdout);
 }
 
 void console_provide_logctx(void *logctx)
@@ -299,19 +301,78 @@ void logevent(void *frontend, const char *string)
     log_eventlog(console_logctx, string);
 }
 
+int accept_input(char *prompt, int echo, char *input, int inlen)
+{
+    int n = 0;
+    int ch;
+
+    fprintf(stderr, prompt);
+    fflush(stderr);
+
+    while ((ch = _getch()) != '\r') {
+        if (ch == EOF) {
+            fprintf(stderr, "[EOF]\n");
+            fflush(stderr);
+            return 0;
+        } else if (ch == 0 || ch == 0xE0) {
+            ch = (ch << 4) | _getch();
+            if ((ch == 0xE53 || ch == 0xE4B || ch == 0x053 || ch == 0x04b) && n) {
+                input[--n] = '\0';
+                fprintf(stderr, "\b \b");
+            } else {
+                fprintf(stderr, "\a");
+            }
+        } else if ((ch == '\b' || ch == 127) && n) {
+            input[--n] = '\0';
+            fprintf(stderr, "\b \b");
+        } else if (ch == 3) {
+            fprintf(stderr, "^C\n");
+            fflush(stderr);
+            return 0;
+        } else if (ch == 26) {
+            fprintf(stderr, "^Z\n");
+            fflush(stderr);
+            return 0;
+        } else if (ch == 27) {
+            fprintf(stderr, "\n");
+            fprintf(stderr, prompt);
+            fflush(stderr);
+            n = 0;
+        } else if ((n < inlen - 1) && !iscntrl(ch)) {
+            input[n++] = ch;
+            if (!echo) {
+                fprintf(stderr, "*");
+            } else {
+                fputc(ch, stderr);
+            }
+        } else {
+            fprintf(stderr, "\a");
+        }
+    }
+
+    fprintf(stderr, "\n");
+    fflush(stderr);
+
+    if (n > inlen) {
+        n = inlen - 1;
+    }
+    input[n] = '\0';
+
+    return 1;
+}
+
 int console_get_userpass_input(prompts_t *p, unsigned char *in, int inlen)
 {
     size_t curr_prompt;
-    int n = 0;
-    int ch;
+    int ret;
 
     /*
      * Zero all the results, in case we abort half-way through.
      */
     {
-	int i;
-	for (i = 0; i < (int)p->n_prompts; i++)
-	    memset(p->prompts[i]->result, 0, p->prompts[i]->result_len);
+        int i;
+        for (i = 0; i < (int)p->n_prompts; i++)
+            memset(p->prompts[i]->result, 0, p->prompts[i]->result_len);
     }
 
     /*
@@ -321,8 +382,8 @@ int console_get_userpass_input(prompts_t *p, unsigned char *in, int inlen)
      * need to ensure that we're able to get the answers.
      */
     if (p->n_prompts) {
-	if (console_batch_mode)
-	    return 0;
+        if (console_batch_mode)
+            return 0;
     }
 
     /*
@@ -330,74 +391,27 @@ int console_get_userpass_input(prompts_t *p, unsigned char *in, int inlen)
      */
     /* We only print the `name' caption if we have to... */
     if (p->name_reqd && p->name) {
-	size_t l = strlen(p->name);
-	fprintf(stderr, p->name);
-	if (p->name[l-1] != '\n')
-	    fprintf(stderr, "\n");
+        size_t l = strlen(p->name);
+        fprintf(stderr, p->name);
+        if (p->name[l-1] != '\n')
+            fprintf(stderr, "\n");
     }
     /* ...but we always print any `instruction'. */
     if (p->instruction) {
-	size_t l = strlen(p->instruction);
-	fprintf(stderr, p->instruction);
-	if (p->instruction[l-1] != '\n')
-	    fprintf(stderr, "\n");
+        size_t l = strlen(p->instruction);
+        fprintf(stderr, p->instruction);
+        if (p->instruction[l-1] != '\n')
+            fprintf(stderr, "\n");
     }
 
     for (curr_prompt = 0; curr_prompt < p->n_prompts; curr_prompt++) {
 
         prompt_t *pr = p->prompts[curr_prompt];
 
-        fprintf(stderr, pr->prompt);
-        fflush(stderr);
-
-        while ((ch = _getch()) != '\r') {
-            if (ch == EOF) {
-                fprintf(stderr, "[EOF]\n");
-                fflush(stderr);
-                return 0;
-            } else if (ch == 0 || ch == 0xE0) {
-                ch = (ch << 4) | _getch();
-                if ((ch == 0xE53 || ch == 0xE4B || ch == 0x053 || ch == 0x04b) && n) {
-                    pr->result[--n] = '\0';
-                    fprintf(stderr, "\b \b");
-                } else {
-                    fputc('\a', stderr);
-                }
-            } else if ((ch == '\b' || ch == 127) && n) {
-                pr->result[--n] = '\0';
-                fprintf(stderr, "\b \b");
-            } else if (ch == 3) {
-                fprintf(stderr, "^C\n");
-                fflush(stderr);
-                exit(-1);
-            } else if (ch == 26) {
-                fprintf(stderr, "^Z\n");
-                fflush(stderr);
-                return 0;
-            } else if (ch == 27) {
-                fprintf(stderr, "\n");
-                fprintf(stderr, pr->prompt);
-                fflush(stderr);
-                n = 0;
-            } else if ((n < pr->result_len - 1) && !iscntrl(ch)) {
-                pr->result[n++] = ch;
-                if (!pr->echo) {
-                    fprintf(stderr, "*");
-                } else {
-                    fputc(ch, stderr);
-                }
-            } else {
-                fprintf(stderr, "\a");
-            }
+        ret = accept_input(pr->prompt, pr->echo, pr->result, pr->result_len);
+        if (ret == 0) {
+            return 0;
         }
-
-        fprintf(stderr, "\n");
-        fflush(stderr);
-
-        if (n > pr->result_len)
-            n = pr->result_len - 1;
-        pr->result[n] = '\0';
-
     }
 
     return 1; /* success */
