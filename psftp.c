@@ -2845,7 +2845,7 @@ static int psftp_connect(char *userhost, char *user, int portnumber, char *subsy
 
     /* Set up subsystem name. */
     conf_set_str(conf, CONF_remote_cmd, subsystem);
-    if (conf_get_str_str(conf, CONF_remote_cmd, "/"))
+    if (strchr(subsystem, '/'))
         conf_set_int(conf, CONF_ssh_subsys, FALSE);
     else
         conf_set_int(conf, CONF_ssh_subsys, TRUE);
